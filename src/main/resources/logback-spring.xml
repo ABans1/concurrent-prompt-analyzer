@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Spring Boot's defaults give us colour, log levels, etc. -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Logback exposes the machine hostname as ${HOSTNAME}; capture it for the pattern + filename. -->
+    <property name="HOST" value="${HOSTNAME:-unknown-host}"/>
+    <property name="LOG_DIR" value="logs"/>
+
+    <!--
+      Every line carries the hostname and the correlation fields propagated via MDC:
+      [host=<hostname>] ... [req=<requestId> batch=<batchId> idx=<promptIndex> try=<attempt>]
+    -->
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [host=${HOST}] [%thread] %logger{36} - [req=%X{requestId:-} batch=%X{batchId:-} idx=%X{promptIndex:-} try=%X{attempt:-}] %msg%n"/>
+
+    <!-- Console stays at INFO so it isn't flooded by per-prompt DEBUG traces. -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- A rolling log file named per hostname, capturing finer-grained DEBUG detail. -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/concurrent-prompt-analyzer-${HOST}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/concurrent-prompt-analyzer-${HOST}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Detailed traces for our own package land in the file. -->
+    <logger name="com.example.concurrentpromptanalyzer" level="DEBUG"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+</configuration>
