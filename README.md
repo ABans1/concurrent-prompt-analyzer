@@ -138,6 +138,23 @@ All tunable in `src/main/resources/application.properties`:
 
 > Requires JDK 21 on the machine. The Maven wrapper downloads Maven automatically on first run.
 
+### With Docker
+
+```bash
+# Build the image and start the service (Tomcat on :8080)
+docker compose up --build
+```
+
+The multi-stage `Dockerfile` builds the jar (JDK 21) and runs it on a JRE image as a non-root user.
+`docker-compose.yml` mounts `./data` and `./logs` so the **write-ahead journal and per-host logs
+persist across container restarts** (crash recovery keeps working). Swagger UI is then at
+http://localhost:8080/swagger-ui.html.
+
+## CI
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push / PR to `master`: it sets
+up JDK 21, caches Maven, and runs `./mvnw -B verify` (compile + full JUnit 5 suite).
+
 ## Project structure
 
 ```

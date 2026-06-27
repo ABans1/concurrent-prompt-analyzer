@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    image: concurrent-prompt-analyzer:latest
+    container_name: concurrent-prompt-analyzer
+    ports:
+      - "8080:8080"
+    environment:
+      # Override any application.properties value via SPRING_APPLICATION_JSON or relaxed env binding.
+      SERVER_PORT: "8080"
+    volumes:
+      # Persist the write-ahead journal + logs so crash recovery survives container restarts.
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/v3/api-docs >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
