@@ -140,13 +140,14 @@ intake `429` both happen *before* any work is scheduled, and the `202` ack retur
 
 ```mermaid
 flowchart TD
-    A["Client: POST /api/v1/batches<br/>{prompts: [...]}"] --> B["BatchController.submit()"]
+    A["Client: POST /api/v1/batches<br/>{prompts: [...]}"] --> LF["RequestLoggingFilter<br/>assign requestId -> MDC<br/>(honours X-Request-Id)"]
+    LF --> B["BatchController.submit()"]
     B --> C["BatchProcessingService.submit()"]
 
     C --> D["validateAndNormalize()<br/>non-empty? size <= max?<br/>each prompt non-blank & <= maxLen?"]
     D -->|invalid| E["400 Bad Request<br/>(InvalidBatchException)"]
 
-    D -->|valid| F["IntakeRateLimiter.acquire()<br/>Semaphore(3)"]
+    D -->|valid| F["IntakeRateLimiter.acquire()<br/>Semaphore(max-in-flight=10)"]
     F -->|no permit| G["429 Too Many Requests"]
 
     F -->|permit acquired| H["BatchStore.save()<br/>BatchRecord = PENDING"]
@@ -155,7 +156,7 @@ flowchart TD
     H --> J["startProcessing()<br/>markRunning -> RUNNING"]
     J --> K["fan-out: one CompletableFuture.runAsync<br/>per prompt on promptWorkerExecutor"]
 
-    K --> P["Bounded ThreadPoolExecutor<br/>core=4, max=8, queue=100<br/>CallerRunsPolicy (backpressure)"]
+    K --> P["Bounded ThreadPoolExecutor<br/>core=8, max=32, queue=500<br/>ScalingTaskQueue + ForceQueueOrCallerRunsPolicy"]
 
     subgraph WORKERS["prompt-worker-* threads"]
         P --> W1["worker: prompt 0"]
@@ -163,12 +164,21 @@ flowchart TD
         P --> W3["worker: prompt N"]
     end
 
-    W1 --> X["re-establish MDC<br/>(req/batch/idx) then infer()"]
+    W1 --> X["re-establish MDC<br/>(req/batch/idx/try) then infer()"]
     W2 --> X
     W3 --> X
 
     X --> R["recordResult(index) -> BatchRecord<br/>(ConcurrentHashMap)"]
     R --> Y["allOf(...).whenComplete()<br/>markCompleted -> COMPLETED<br/>+ rateLimiter.release()"]
+
+    subgraph OBS["Observability — SLF4J + Logback + MDC"]
+        LOG["Per-host rolling log file<br/>logs/concurrent-prompt-analyzer-&lt;hostname&gt;.log<br/>every line: [host][req][batch][idx][try]"]
+    end
+
+    LF -. log .-> LOG
+    C -. log .-> LOG
+    X -. log .-> LOG
+    Y -. log .-> LOG
 ```
 
 ### Batch state machine
